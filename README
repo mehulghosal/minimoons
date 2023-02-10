@@ -3,7 +3,9 @@ reference plane ecliptic
 SSB = solar system barycenter
 icrater from 1 to 60 (the name of the folder)
 
---- files capture_1000*.out ---
+each ejecta/fragment has a unique ID given by (icrater-1)*78+ifragment
+
+--- files capture_1000*.out --- the '*' is the zero padded ID 
  t (day from t0), Keplerian Energy wrt Earth, Keplerian Energy wrt Earth-Moon barycenter, SSB-centric particle state x,y,z,vx,vy,vz, SSB-centric Earth state xE,yE,zE,vxE,vyE,vzE, SSB-centric Moon state xM,yM, zM,vxM, vyM,vzM, heliocentric particle orbital elements a,e,inc,Omega,omega, geocentric particle orbital elements Ea, Ee, Einc, EOmega, Eomega
  
 --- files capture_1.out capture_2.out capture_icrater.etc. ---
@@ -12,7 +14,7 @@ where index of the fragment goes from 1 to 78
 
 --- file initialconditions_icrater.out ---
 index of the fragment, crater longitude, latitude, initial ejecta speed from the Moon (km/s), azimuth, time (JD), SSB-centric particle state x,y,z,vx,vy,v,heliocentric particle orbital elements a,e,inc,Omega,omega, geocentric particle orbital elements Ea, Ee, Einc, EOmega, Eomega
-where here index of the fragment goes from (icrater-1)+1 to (icrater-1)+78
+where here ID of the fragment goes from (icrater-1)*78+1 to (icrater-1)*78+78
 
 --- file escape_icrater.out ---
 index of the fragment (as in capture_icrater.out), time of escape (days from t0)
