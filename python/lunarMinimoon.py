@@ -35,7 +35,7 @@ moon_axis_km = 384400 # https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact
 
 
 
-dirSimulation = '/Users/rjedicke/data/lunar-minimoons/REBOUND/'
+dirSimulation = '../data/'
 
    
 # ejecta initial conditions
