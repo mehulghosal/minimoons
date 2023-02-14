@@ -18,15 +18,15 @@ import pyoorb as oo
 import HUTILITIES as h
 import PLOT_UTILITIES as plot
 import utilities as util
-import oorb
+import pyoorb as oo
 import orbit
 
 
 oo.pyoorb.oorb_init()
 
 import glob
-ephfile = os.path.join( os.getenv('OORB_DATA'), 'de430.dat' )
-oo.pyoorb.oorb_init( ephfile )
+# ephfile = os.path.join( os.getenv('OORB_DATA'), 'de430.dat' )
+# oo.pyoorb.oorb_init( ephfile )
 
 
 from scipy.constants import pi
@@ -64,12 +64,12 @@ def createSummaryTable( nCraters=60 ):
 
     global gnParticlesPerCrater    
     global gSummaryTable
+    global giPar, gLon_rad, gLat_rad, gv0_kps, gAzimuth_rad, gImpactTime_jd, gxv0_ssb_ec, gOrbit0_hel, gOrbit0_geo
 
 
     loadInitialConditions()
 
-   #summaryTable = np.array( (nCraters*gnParticlesPerCrater+1,5), 
-    gSummaryTable = np.full(  (nCraters*gnParticlesPerCrater+1,7), -1,
+    gSummaryTable = np.full(  (nCraters*gnParticlesPerCrater+1), -1,
                                                     dtype=[ ('craterID',  'int'), 
                                                  ('lon_rad',   'float'),
                                                  ('lat_rad',   'float'),
@@ -78,23 +78,18 @@ def createSummaryTable( nCraters=60 ):
                                                  ('t0_jd',    'float'),
                                                  ('azimuth_deg',    'float'),
                                                  ] )
-
     for jCrater in np.arange( nCraters )+1:
         
         for iParticle in np.arange( gnParticlesPerCrater )+1:
         
             particleID = ( jCrater - 1 ) * gnParticlesPerCrater + iParticle
+            # print(particleID)
 
-            gSummaryTable[ 'craterID'   ][particleID] = jCrater
-            gSummaryTable[ 'lon_rad' ][particleID] = gLon_rad[ giPar==particleID ]
-            gSummaryTable[ 'lat_rad' ][particleID] = gLat_rad[ giPar==particleID ]
-            gSummaryTable[ 'particleID' ][particleID] = particleID
-            gSummaryTable[ 'v0_kps' ][particleID] = gv0_kps[ giPar==particleID ]
-          #gSummaryTable[ '' ][particleID] = 
-
-        
-
-
+            gSummaryTable[particleID][ 'craterID'   ] = jCrater
+            gSummaryTable[particleID][ 'lon_rad' ] = gLon_rad[ particleID -1 ]
+            gSummaryTable[particleID][ 'lat_rad' ] = gLat_rad[ particleID -1 ]
+            gSummaryTable[particleID][ 'particleID' ] = particleID
+            gSummaryTable[particleID][ 'v0_kps' ] = gv0_kps[ particleID -1  ]
 
 
 
@@ -143,7 +138,7 @@ def loadCollisions( iMaxCraterID=60 ):
     pyplot.ylabel( 'number' ) 
     pyplot.yscale( "log" )
 
-    pyplot.show()
+    # pyplot.show()
 
 
 
