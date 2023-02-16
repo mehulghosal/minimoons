@@ -46,6 +46,7 @@ gnParticlesPerCrater = 78
 # capture info
 global jcrater, jparticle
 global t_days, EwrtEarth, EwrtEMBary, xvEjecta_ssb_ec, xvEarth_ssb_ec, xvMoon_ssb_ec, orbit_hel, orbit_geo
+global giEjecta, gtBegin_day, gtEnd_day
 
 # escape info
 global gEscape_ipar, gEscape_day
@@ -62,7 +63,7 @@ global gSummaryTable
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 def createSummaryTable( nCraters=60 ):
 
-    global gnParticlesPerCrater    
+    global gnParticlesPerCrater
     global gSummaryTable
     global giPar, gLon_rad, gLat_rad, gv0_kps, gAzimuth_rad, gImpactTime_jd, gxv0_ssb_ec, gOrbit0_hel, gOrbit0_geo
 
@@ -77,19 +78,36 @@ def createSummaryTable( nCraters=60 ):
                                                  ('v0_kps',    'float'),
                                                  ('t0_jd',    'float'),
                                                  ('azimuth_deg',    'float'),
+                                                 ('captured' , 'int'),
+                                                 ('begin_day' , 'object'),
+                                                 ('end_day' , 'object'),
                                                  ] )
     for jCrater in np.arange( nCraters )+1:
-        
+
+        # if jCrater==55: continue
+
+        loadCaptureSummary(jCrater)
+        global giEjecta, gtBegin_day, gtEnd_day
+
         for iParticle in np.arange( gnParticlesPerCrater )+1:
         
             particleID = ( jCrater - 1 ) * gnParticlesPerCrater + iParticle
-            # print(particleID)
+
+            captured   = np.where(giEjecta==particleID)
+
+            if len(captured[0])>0  : 
+                gSummaryTable[particleID][ 'captured'  ] = 1 
+                gSummaryTable[particleID][ 'begin_day' ] = gtBegin_day[captured]
+                gSummaryTable[particleID][ 'end_day'   ] = gtEnd_day[captured]
+
 
             gSummaryTable[particleID][ 'craterID'   ] = jCrater
             gSummaryTable[particleID][ 'lon_rad' ] = gLon_rad[ particleID -1 ]
             gSummaryTable[particleID][ 'lat_rad' ] = gLat_rad[ particleID -1 ]
             gSummaryTable[particleID][ 'particleID' ] = particleID
             gSummaryTable[particleID][ 'v0_kps' ] = gv0_kps[ particleID -1  ]
+            gSummaryTable[particleID][ 't0_jd' ] = gImpactTime_jd[ particleID -1  ]
+            gSummaryTable[particleID][ 'azimuth_deg' ] = np.rad2deg(gAzimuth_rad[ particleID -1  ])
 
 
 
@@ -250,6 +268,7 @@ def loadCaptureSummary( icrater=53, size=(8,8), dpi=200, markerstyle='.', marker
     
     captureSummaryFile = dirSimulation+'crater' + str(icrater) + '/capture_' + str(icrater) + '.out'
 
+    global giEjecta, gtBegin_day, gtEnd_day
     giEjecta, gtBegin_day, gtEnd_day = np.loadtxt( captureSummaryFile, unpack=True )
     
     h.plot( np.log10(gtEnd_day-gtBegin_day), xlabel='$\log_{10}$( capture duration / days )', nbins=20, xrange=(-1,4), title='crater '+str(icrater) )
@@ -265,7 +284,7 @@ def loadCaptureSummary( icrater=53, size=(8,8), dpi=200, markerstyle='.', marker
     pyplot.xlabel( 'days from impact' )
     pyplot.ylabel( 'ejecta particle ID' )
     pyplot.title( 'crater ' + str(icrater) )
-    pyplot.show()
+    # pyplot.show()
     
 
 

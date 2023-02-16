@@ -16,7 +16,7 @@ import matplotlib.pyplot as pyplot
 #-----------------------------------------------------------------------------------------------
 # used to be plot2d
 def plot2d( x, y, xlabel='', xrange=(), ylabel='', title='', yrange=(), markerstyle='.', 
-           markersize=1, size=(8,8), dpi=200, bShow=True, xfunc=(), yfunc=(),
+           markersize=1, size=(8,8), dpi=200, bShow=False, xfunc=(), yfunc=(),
            logx=False, logy=False, saveto='' ):
     
     pyplot.figure( figsize=size, dpi=dpi )

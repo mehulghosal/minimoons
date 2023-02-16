@@ -54,7 +54,7 @@ binCenters = np.zeros( 1 )
 # basic histogram of an array with basic statistics
 def plot( npx, title='', xlabel='', ylabel='number', nbins=100, xrange=(), yrange=(), doNormalize=False,
          info=True, logx=False, logy=False, saveto="", 
-          xsize=8, ysize=8, dpi=200, doReturn=False, doShow=True,
+          xsize=8, ysize=8, dpi=200, doReturn=False, doShow=False,
           bShowErrorBars=False, bPoissonErrors=False, bUseYErrorVectors=False, yErrorPos=[], yErrorNeg=[] ):
     
     global nPerBin
