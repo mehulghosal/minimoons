@@ -46,7 +46,7 @@ gnParticlesPerCrater = 78
 # capture info
 global jcrater, jparticle
 global t_days, EwrtEarth, EwrtEMBary, xvEjecta_ssb_ec, xvEarth_ssb_ec, xvMoon_ssb_ec, orbit_hel, orbit_geo
-global giEjecta, gtBegin_day, gtEnd_day
+global gtBegin_day, gtEnd_day, giParticleID
 
 # escape info
 global gEscape_ipar, gEscape_day
@@ -56,8 +56,8 @@ global gCollide_day, gCollide_ipar, gCollide_body
 
 global gSummaryTable
 
-
-
+global gMinDiameter_m
+gMinDiameter_m = 1 
 
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -84,22 +84,16 @@ def createSummaryTable( nCraters=60 ):
                                                  ] )
     for jCrater in np.arange( nCraters )+1:
 
-        # if jCrater==55: continue
+        if jCrater==55: continue
 
         loadCaptureSummary(jCrater)
-        global giEjecta, gtBegin_day, gtEnd_day
+        global giParticleID, gtBegin_day, gtEnd_day
+
+        # giParticleID_to_particleID = (jCrater-1) *gnParticlesPerCrater + giParticleID
 
         for iParticle in np.arange( gnParticlesPerCrater )+1:
         
             particleID = ( jCrater - 1 ) * gnParticlesPerCrater + iParticle
-
-            captured   = np.where(giEjecta==particleID)
-
-            if len(captured[0])>0  : 
-                gSummaryTable[particleID][ 'captured'  ] = 1 
-                gSummaryTable[particleID][ 'begin_day' ] = gtBegin_day[captured]
-                gSummaryTable[particleID][ 'end_day'   ] = gtEnd_day[captured]
-
 
             gSummaryTable[particleID][ 'craterID'   ] = jCrater
             gSummaryTable[particleID][ 'lon_rad' ] = gLon_rad[ particleID -1 ]
@@ -109,8 +103,131 @@ def createSummaryTable( nCraters=60 ):
             gSummaryTable[particleID][ 't0_jd' ] = gImpactTime_jd[ particleID -1  ]
             gSummaryTable[particleID][ 'azimuth_deg' ] = np.rad2deg(gAzimuth_rad[ particleID -1  ])
 
+            captured   = np.where(giParticleID==particleID)
+
+            if len(captured[0])>0  : 
+                gSummaryTable[particleID][ 'captured'  ] = 1 
+                gSummaryTable[particleID][ 'begin_day' ] = gtBegin_day[captured]
+                gSummaryTable[particleID][ 'end_day'   ] = gtEnd_day[captured]
+
+# TODO: prompt captures vs delayed captures
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------
+def fractionCapturedVSVelocity ( show=True ):
+    global gSummaryTable 
+
+    unique_v0_kps   = np.unique(gSummaryTable['v0_kps'])
+    total_per_v0    = np.zeros(len(unique_v0_kps))
+    captured_per_v0 = np.zeros(len(unique_v0_kps))
+    prompt_per_v0   = np.zeros(len(unique_v0_kps))
+    delayed_per_v0  = np.zeros(len(unique_v0_kps))
+
+    for ii in range(len(unique_v0_kps)):
+    # for ii in range(1,2):
+        v_0 = unique_v0_kps[ii]
+        v_0_matches = gSummaryTable[np.where(gSummaryTable['v0_kps']==v_0)]
+        
+        total_per_v0[ii]    = len(v_0_matches)
+        captured            = np.where( v_0_matches['captured'] == 1 )
+
+        captured_per_v0[ii] = len(captured[0])
+        for jj in range(len(captured[0])):
+            prompt_per_v0  [ii] += len( np.where(v_0_matches[captured]['begin_day'] [jj] < 1)[0] )
+            delayed_per_v0 [ii] += len( np.where(v_0_matches[captured]['begin_day'] [jj] > 1)[0] )
+
+    fraction_per_v0 = captured_per_v0 / total_per_v0
+    prompt_over_delayed = prompt_per_v0 / delayed_per_v0
+
+    print('unique initial velocities [km/s]: ' , unique_v0_kps)
+    print('total per v0: ' , total_per_v0) 
+    print('total captured: ' , captured_per_v0) 
+    print('fraction captured: ' , fraction_per_v0) 
+    print('ratio of prompt over delayed captures: ', prompt_over_delayed)
+    print()
+
+    plot.plot2d ( unique_v0_kps , fraction_per_v0 ,  markersize=5 , xrange=(1,25) , yrange=(-.01,1) , title='Fraction captured vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Fraction captured' )
+    plot.plot2d ( unique_v0_kps , fraction_per_v0 ,  markersize=5 , logx=True , logy=True , xrange=(1,25) , yrange=(0.001,1) , title='Fraction captured vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Fraction captured' )
+
+    plot.plot2d ( unique_v0_kps , prompt_over_delayed , bShow=show ,  markersize=5 , logx=True , logy=True , xrange=(1,25) , yrange=(0.001,1) , title='Fraction captured vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Fraction captured' )
+
+    return unique_v0_kps , fraction_per_v0
+
+# TODO prompt and delayed captures
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------
+def captureLifetimeVSVelocity ( show=True ) :
+    global gSummaryTable
+
+    unique_v0_kps   = np.unique(gSummaryTable['v0_kps'])
+    lifetime_per_v0 = np.zeros(len(unique_v0_kps))
+
+    prompt_per_v0   = np.zeros(len(unique_v0_kps))
+    delayed_per_v0  = np.zeros(len(unique_v0_kps))
+
+    for ii in range(len(unique_v0_kps)):
+        v_0 = unique_v0_kps[ii]
+        v_0_matches = gSummaryTable[np.where(gSummaryTable['v0_kps']==v_0)]
+
+        captured  = np.where( v_0_matches['captured'] == 1 )
+
+        begin_day = v_0_matches[captured]['begin_day']
+        end_day   = v_0_matches[captured]['end_day'  ]
+
+        for jj in range(len(captured[0])):
+            prompt  = np.where(v_0_matches[captured]['begin_day'] [jj] < 1)
+            delayed = np.where(v_0_matches[captured]['begin_day'] [jj] > 1)
+
+            lifetime_per_v0[ii] += np.sum ( end_day[jj] - begin_day[jj] )
+
+            prompt_per_v0  [ii] += np.sum ( end_day[jj][prompt ] - begin_day[jj][prompt ] )
+            delayed_per_v0 [ii] += np.sum ( end_day[jj][delayed] - begin_day[jj][delayed] )
 
 
+    print('unique initial velocities [km/s]: ' , unique_v0_kps)
+    print('lifetime per v0 [days] : ' , lifetime_per_v0) 
+    print('prompt lifetime per v0 [days] : ' , prompt_per_v0)
+    print('delayed lifetime per v0 [days] : ' , delayed_per_v0)
+    print()
+
+    plot.plot2d ( unique_v0_kps , lifetime_per_v0 , markersize=5 , xrange=(1,25)  , title='Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Capture lifetime [days]' )
+    plot.plot2d ( unique_v0_kps , lifetime_per_v0 , markersize=5 , logx=True , logy=True , xrange=(1,25) , title='Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Capture lifetime [days]' )
+    
+    plot.plot2d ( unique_v0_kps , prompt_per_v0  , markersize=5 , logx=True , logy=True , xrange=(1,25) , title='prompt Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Capture lifetime [days]' )
+    plot.plot2d ( unique_v0_kps , delayed_per_v0 , bShow=show , markersize=5 , logx=True , logy=True , xrange=(1,25) , title='delayed Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Capture lifetime [days]' )
+
+    return unique_v0_kps , lifetime_per_v0
+
+# TODO
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------
+def fluxDensity ( diameter=1 ):
+    # cumulative rate of impactors larger than 1km per 1 million years
+    rateOnEarth_1km_1Myr = 1
+    rateOnMoon_1km_1Myr  = rateOnEarth_1km_1Myr*(1737.4/6378)**2
+
+    # size distribution of objects function of diamter - read paper
+
+
+# TODO
+# FUNCTION OF impactor diameter , ejecta diameter , ejecta speed
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------
+def nEjectaDensity ( diameter , ejecta_diameter , ejecta_speed ):
+    # 1km impactor creates 10km crater
+    # ratio of crater diameter to depth = 10/1
+    # assuming hemispherical bowl : volume of ejecta
+    # volume of ejecta has same size distribution as impactors : size freq of ejecta
+    
+    # ejecta diameter vs speed: assume random and uniform
+    crater_diameter = 10 * diameter
+    crater_depth    = crater_diameter / 10
+    crater_volume   = np.pi/3 * (crater_diameter/2 - crater_depth) * crater_depth**2
+
+
+
+    pass
+
+# integrate previous functions to calculate stead state population 
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------
+def minimoons(  ):
+    global gMinDiameter_m
+    pass
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 def loadCollisions( iMaxCraterID=60 ):
@@ -268,18 +385,21 @@ def loadCaptureSummary( icrater=53, size=(8,8), dpi=200, markerstyle='.', marker
     
     captureSummaryFile = dirSimulation+'crater' + str(icrater) + '/capture_' + str(icrater) + '.out'
 
-    global giEjecta, gtBegin_day, gtEnd_day
-    giEjecta, gtBegin_day, gtEnd_day = np.loadtxt( captureSummaryFile, unpack=True )
-    
+    global giParticleID, gtBegin_day, gtEnd_day
+    iEjecta, gtBegin_day, gtEnd_day = np.loadtxt( captureSummaryFile, unpack=True )
+
+    giParticleID = ( icrater - 1 ) * gnParticlesPerCrater + iEjecta
+
+
     h.plot( np.log10(gtEnd_day-gtBegin_day), xlabel='$\log_{10}$( capture duration / days )', nbins=20, xrange=(-1,4), title='crater '+str(icrater) )
         
     # capture start and stop times for each ejecta
     pyplot.figure( figsize=size, dpi=dpi )
     pyplot.ylim( (0,80) )
     pyplot.xscale( 'log' )
-    for j in np.arange( len(giEjecta) ):
+    for j in np.arange( len(giParticleID) ):
         x = [ gtBegin_day[j], gtEnd_day[j] ]
-        y = [    giEjecta[j],  giEjecta[j] ]
+        y = [    giParticleID[j],  giParticleID[j] ]
         pyplot.plot( x, y, 'b', linestyle='-' )
     pyplot.xlabel( 'days from impact' )
     pyplot.ylabel( 'ejecta particle ID' )
