@@ -30,6 +30,8 @@ import glob
 
 
 from scipy.constants import pi
+from scipy.optimize import curve_fit
+from scipy.integrate import quad , dblquad
 
 moon_axis_km = 384400 # https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html
 
@@ -59,6 +61,22 @@ global gSummaryTable
 global gMinDiameter_m
 gMinDiameter_m = 1 
 
+
+def fraction_captured ( x , a , b , x_0):
+    return heavyside(x  , b) * maxwell_boltzmann(x, a , x_0)
+
+def maxwell_boltzmann ( x , a , x_0 ) : 
+    return  (x-x_0)**2 * np.exp(-((x-x_0)**2) / (2 * a**2) ) / a**3
+
+def heavyside ( x , t ):
+    return np.heaviside ( x - t , 1 )
+    # return y
+
+def Gaussian ( x , mean , std , scale ):
+    return np.exp ( -.5 * ((x-mean) / std)**2  ) *scale
+
+def lifetime ( x , mean , std , scale , t ) : 
+    return Gaussian ( x , mean , std , scale ) * heavyside ( x , t )
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 def createSummaryTable( nCraters=60 ):
@@ -115,7 +133,7 @@ def createSummaryTable( nCraters=60 ):
 def fractionCapturedVSVelocity ( show=True ):
     global gSummaryTable 
 
-    unique_v0_kps   = np.unique(gSummaryTable['v0_kps'])
+    unique_v0_kps   = np.unique(gSummaryTable['v0_kps'] [ np.where (gSummaryTable['v0_kps'] > 0 ) ] )
     total_per_v0    = np.zeros(len(unique_v0_kps))
     captured_per_v0 = np.zeros(len(unique_v0_kps))
     prompt_per_v0   = np.zeros(len(unique_v0_kps))
@@ -137,98 +155,245 @@ def fractionCapturedVSVelocity ( show=True ):
     fraction_per_v0 = captured_per_v0 / total_per_v0
     prompt_over_delayed = prompt_per_v0 / delayed_per_v0
 
-    print('unique initial velocities [km/s]: ' , unique_v0_kps)
-    print('total per v0: ' , total_per_v0) 
-    print('total captured: ' , captured_per_v0) 
-    print('fraction captured: ' , fraction_per_v0) 
-    print('ratio of prompt over delayed captures: ', prompt_over_delayed)
-    print()
+    # print('unique initial velocities [km/s]: ' , unique_v0_kps)
+    # print('total per v0: ' , total_per_v0) 
+    # print('total captured: ' , captured_per_v0) 
+    # print('fraction captured: ' , fraction_per_v0) 
 
-    plot.plot2d ( unique_v0_kps , fraction_per_v0 ,  markersize=5 , xrange=(1,25) , yrange=(-.01,1) , title='Fraction captured vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Fraction captured' )
-    plot.plot2d ( unique_v0_kps , fraction_per_v0 ,  markersize=5 , logx=True , logy=True , xrange=(1,25) , yrange=(0.001,1) , title='Fraction captured vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Fraction captured' )
+    # fig , ax = pyplot.subplots( )
 
-    plot.plot2d ( unique_v0_kps , prompt_over_delayed , bShow=show ,  markersize=5 , logx=True , logy=True , xrange=(1,25) , yrange=(0.001,1) , title='Fraction captured vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Fraction captured' )
+    # ax.scatter ( unique_v0_kps , fraction_per_v0 )
+    # ax.set_xlabel( 'Ejection speed [km/s]' )
+    # ax.set_ylabel('Fraction captured' )
+    # ax.set_title('Fraction captured vs ejection speed')
+    # ax.set_xlim (1 , 25)
+    # ax.set_ylim (1e-6 , 1.1)
+    
+    param , param_cov = curve_fit ( fraction_captured , unique_v0_kps , fraction_per_v0 )
+    # print('fitted parameters : ', param)
+    # print()
 
-    return unique_v0_kps , fraction_per_v0
+
+    # ax.plot ( unique_v0_kps , fraction_captured(unique_v0_kps , *param))
+
+    # ax.set_xscale('log')
+    # ax.set_yscale('log')
+
+
+    # plot.plot2d ( unique_v0_kps , prompt_per_v0/total_per_v0  ,  markersize=5 , xrange=(2,5) , yrange=(-0.1,1) , title='prompt Fraction captured vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='prompt Fraction captured' )
+    # plot.plot2d ( unique_v0_kps , delayed_per_v0/total_per_v0 , bShow=show ,  markersize=5  , xrange=(2,5) , yrange=(-0.1,1) , title='delayed Fraction captured vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='delayed Fraction captured' )
+
+    return unique_v0_kps , fraction_per_v0 , param
 
 # TODO prompt and delayed captures
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 def captureLifetimeVSVelocity ( show=True ) :
     global gSummaryTable
 
-    unique_v0_kps   = np.unique(gSummaryTable['v0_kps'])
+    unique_v0_kps   = np.unique(gSummaryTable['v0_kps'][ np.where (gSummaryTable['v0_kps'] > 0 ) ])
+    captured_per_v0 = np.zeros(len(unique_v0_kps))
+
     lifetime_per_v0 = np.zeros(len(unique_v0_kps))
 
     prompt_per_v0   = np.zeros(len(unique_v0_kps))
     delayed_per_v0  = np.zeros(len(unique_v0_kps))
+
+    prompt_lifetime  = np.zeros(len(unique_v0_kps))
+    delayed_lifetime = np.zeros(len(unique_v0_kps))
 
     for ii in range(len(unique_v0_kps)):
         v_0 = unique_v0_kps[ii]
         v_0_matches = gSummaryTable[np.where(gSummaryTable['v0_kps']==v_0)]
 
         captured  = np.where( v_0_matches['captured'] == 1 )
+        captured_per_v0[ii] = len(captured[0])
 
         begin_day = v_0_matches[captured]['begin_day']
         end_day   = v_0_matches[captured]['end_day'  ]
 
         for jj in range(len(captured[0])):
-            prompt  = np.where(v_0_matches[captured]['begin_day'] [jj] < 1)
-            delayed = np.where(v_0_matches[captured]['begin_day'] [jj] > 1)
+            prompt  = np.where(begin_day [jj] < 2)
+            delayed = np.where(begin_day [jj] > 2000)
 
             lifetime_per_v0[ii] += np.sum ( end_day[jj] - begin_day[jj] )
 
-            prompt_per_v0  [ii] += np.sum ( end_day[jj][prompt ] - begin_day[jj][prompt ] )
-            delayed_per_v0 [ii] += np.sum ( end_day[jj][delayed] - begin_day[jj][delayed] )
+            prompt_lifetime  [ii] += np.sum ( end_day[jj][prompt ] - begin_day[jj][prompt ] ) 
+            delayed_lifetime [ii] += np.sum ( end_day[jj][delayed] - begin_day[jj][delayed] ) 
+
+            prompt_per_v0 [ii]  += len(prompt[0])
+            delayed_per_v0 [ii] += len(delayed[0])
 
 
-    print('unique initial velocities [km/s]: ' , unique_v0_kps)
-    print('lifetime per v0 [days] : ' , lifetime_per_v0) 
-    print('prompt lifetime per v0 [days] : ' , prompt_per_v0)
-    print('delayed lifetime per v0 [days] : ' , delayed_per_v0)
-    print()
+    # print('unique initial velocities [km/s]: ' , unique_v0_kps)
+    # print('lifetime per v0 [days] : ' ,         lifetime_per_v0 ) 
 
-    plot.plot2d ( unique_v0_kps , lifetime_per_v0 , markersize=5 , xrange=(1,25)  , title='Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Capture lifetime [days]' )
-    plot.plot2d ( unique_v0_kps , lifetime_per_v0 , markersize=5 , logx=True , logy=True , xrange=(1,25) , title='Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Capture lifetime [days]' )
+    # print(captured_per_v0)
+
+
+    # print('prompt lifetime per v0 [days] : ' , prompt_lifetime  )
+    # print(prompt_per_v0)
+
+    # print('delayed lifetime per v0 [days] : ' , delayed_lifetime)
+    # print(delayed_per_v0)
+
+
+    avg_capture_lifetime = lifetime_per_v0 / captured_per_v0 
+
+    # plot.plot2d ( unique_v0_kps , lifetime_per_v0 / captured_per_v0 , markersize=5 , logx=True , logy=True , xrange=(2,5) , yrange=(.1, 10000), title='Average Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Average Capture lifetime [days]' )
     
-    plot.plot2d ( unique_v0_kps , prompt_per_v0  , markersize=5 , logx=True , logy=True , xrange=(1,25) , title='prompt Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Capture lifetime [days]' )
-    plot.plot2d ( unique_v0_kps , delayed_per_v0 , bShow=show , markersize=5 , logx=True , logy=True , xrange=(1,25) , title='delayed Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Capture lifetime [days]' )
+    # param , param_cov = curve_fit ( fraction_captured , unique_v0_kps[np.isfinite(avg_capture_lifetime)] , avg_capture_lifetime[np.isfinite(avg_capture_lifetime)] )
+    param , param_cov = curve_fit ( lifetime , unique_v0_kps[np.where(lifetime_per_v0>0)] , avg_capture_lifetime[np.where(lifetime_per_v0>0)] )
 
-    return unique_v0_kps , lifetime_per_v0
+    # param = [.5 , 1 , 1.5]
+
+    # print('fitted parameters : ', param)
+    # print()
+
+    # fig , ax = pyplot.subplots( )
+
+    # ax.scatter ( unique_v0_kps , avg_capture_lifetime )
+    # ax.set_xlabel('Ejection speed [km/s]' )
+    # ax.set_ylabel('Average Capture lifetime [days]')
+    # ax.set_title('Average Capture lifetime vs ejection speed')
+    # ax.set_xlim (1 , 25)
+    # ax.set_ylim (1e-1 , 10e4)
+    
+
+    # ax.plot ( unique_v0_kps , lifetime(unique_v0_kps , *param) )
+
+    # ax.set_xscale('log')
+    # ax.set_yscale('log')
+
+
+
+
+    # plot.plot2d ( unique_v0_kps , prompt_lifetime / prompt_per_v0   , markersize=5 , logx=True , logy=True , xrange=(2,5) , title='Average prompt Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Average prompt Capture lifetime [days]' )
+    # plot.plot2d ( unique_v0_kps , delayed_lifetime / delayed_per_v0  , bShow=False , markersize=5 , logx=True , logy=True , xrange=(2,5) , title='Average delayed Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Average delayed Capture lifetime [days]' )
+
+    # print()
+
+
+    return unique_v0_kps , avg_capture_lifetime , param
 
 # TODO
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
-def fluxDensity ( diameter=1 ):
+def cumulativeLunarImpactRate_Myr ( diameter_km=1 ):
     # cumulative rate of impactors larger than 1km per 1 million years
     rateOnEarth_1km_1Myr = 1
     rateOnMoon_1km_1Myr  = rateOnEarth_1km_1Myr*(1737.4/6378)**2
 
     # size distribution of objects function of diamter - read paper
 
+    # NOTE: 2/22
+    '''
+    this function is eqn 6: F(D) 
+     is this the same as line 261-262 n(D)dD=r(D)dD ?
+     and then is the same as eqn 7: R(D_min , D_max) = /int {D_min} {D_max} {r(D)dD} ?? 
+
+    ''' 
+
+    # NOTE 2/23
+    # equation 10: N = c * d **(-p)
+    # p = 2.5
+    return rateOnMoon_1km_1Myr * diameter_km ** -2.5
+
+
+
 
 # TODO
 # FUNCTION OF impactor diameter , ejecta diameter , ejecta speed
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
-def nEjectaDensity ( diameter , ejecta_diameter , ejecta_speed ):
+def nEjectaDensity ( impactor_diameter_km , ejecta_diameter_km , ejecta_speed=0 , show=False , p=2.5):
     # 1km impactor creates 10km crater
     # ratio of crater diameter to depth = 10/1
     # assuming hemispherical bowl : volume of ejecta
     # volume of ejecta has same size distribution as impactors : size freq of ejecta
     
+    R = .2
+    x = 10
+
+    ejecta_speed_max = 5 
+    ejecta_speed_min = 0
+
     # ejecta diameter vs speed: assume random and uniform
-    crater_diameter = 10 * diameter
-    crater_depth    = crater_diameter / 10
-    crater_volume   = np.pi/3 * (crater_diameter/2 - crater_depth) * crater_depth**2
+    crater_diameter_m = x * impactor_diameter_km * 1000
+    crater_depth_m    = R * crater_diameter_m 
+    # volume of hemispherical bowl
+    crater_volume_m   = np.pi/3 * (crater_diameter_m/2 - crater_depth_m) * crater_depth_m**2
+
+    # rho_ejecta_kg_m = 1700 
+    # rho_moon_kg_m     = 2550
+
+    # ejecta_mass_kg = crater_volume_m * rho_moon_kg_m
+
+    # ejecta_diameter_max = np.max(1000 * ejecta_diameter_km)
+
+    # ejecta_volume_m  = ejecta_mass_kg / rho_ejecta_kg_m
+    # cumulative number of ejecta w diameter > ejecta_diameter_km
+    # C = ejecta_mass_kg * (ejecta_diameter_max ** (-.5)) / (5/6 * np.pi * rho_moon_kg_m) 
+
+    # p = 2.5
+    # exponent = p**2 -3 *p + 1
+    # exponent = 1- 1/p
+    # C = (crater_volume_m * (3-p) / p) ** (-exponent)
+
+    C = ( 2 * (3-p) * (R**2) * (x**3) * (3 - R) / p ) ** (p/3)
+
+    C = C * (impactor_diameter_km * 1000) ** p
+
+    N = C * (ejecta_diameter_km*1000) ** (-p)
+
+    # N = N / (np.max(ejecta_speed) - np.min(ejecta_speed))
+    N = N / (ejecta_speed_max - ejecta_speed_min)
+    
+    return N
 
 
 
-    pass
+def integrand_v0 ( ejecta_speed_kps , param_1 , param_2):
+    l = lifetime( ejecta_speed_kps , *param_2 )
+    f = fraction_captured ( ejecta_speed_kps , *param_1 ) 
+    return  l * f
+
+def integrand_D ( impactor_D_km , ejecta_D_km , ejecta_speed_kps ):
+    F = cumulativeLunarImpactRate_Myr(impactor_D_km)
+    N = nEjectaDensity ( impactor_D_km , ejecta_D_km , ejecta_speed_kps )
+    return F*N
+
+def integrand ( impactor_D_km , ejecta_speed_kps , param_1 , param_2 , ejecta_D_km ):
+    return integrand_D (impactor_D_km , ejecta_D_km , ejecta_speed_kps) * integrand_v0 (ejecta_speed_kps , param_1 , param_2)
 
 # integrate previous functions to calculate stead state population 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
-def minimoons(  ):
+def minimoons( ejecta_diameter_km ):
     global gMinDiameter_m
-    pass
 
+    unique_v0_kps , fraction_per_v0 , param_1 = fractionCapturedVSVelocity(show=False)
+
+    _, avg_lifetime_per_v0 , param_2 = captureLifetimeVSVelocity()
+
+    # cumulative_impact_rate_days = cumulativeLunarImpactRate_Myr(impactor_diameter_km) * 365 * 10e6
+
+    # N_ejecta = nEjectaDensity(impactor_diameter_km , ejecta_diameter_km , unique_v0_kps )
+
+
+    # integral_v0 = quad ( integrand_v0 , 0 , np.inf , args=(param_1 , param_2) )
+    # integral_D  = quad ( integrand_D , 0 , np.inf )
+
+
+    # integral = dblquad ( integrand , 0 , np.inf , 0 , np.inf , args=(param_1 , param_2 , ejecta_diameter_km) )
+    integral = dblquad ( integrand , 0 , 10 , 0 , 10 , args=(param_1 , param_2 , ejecta_diameter_km) )
+
+
+    # print( 'first integral' ,  integral_v0)
+    # print( 'second integral' , integral_D)
+
+    # product_integral = integral_D[0] * integral_v0[0]
+    # print( 'product of integrals ',  product_integral)
+
+    # print( 'double integral ' , integral)
+
+    return integral
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 def loadCollisions( iMaxCraterID=60 ):
 
