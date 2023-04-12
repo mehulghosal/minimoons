@@ -13,8 +13,6 @@ import matplotlib.pyplot as pyplot
 
 import os
 
-import pyoorb as oo
-
 import HUTILITIES as h
 import PLOT_UTILITIES as plot
 import utilities as util
@@ -31,10 +29,11 @@ import glob
 
 from scipy.constants import pi
 from scipy.optimize import curve_fit
-from scipy.integrate import quad , dblquad
+from scipy.integrate import quad , dblquad , tplquad
 
 moon_axis_km = 384400 # https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html
 
+global moon_escape_speed_kps
 moon_escape_speed_kps = 2.34
 
 dirSimulation = '../data/'
@@ -75,6 +74,9 @@ def maxwell_boltzmann ( x , a , x_max ) :
 def heavyside ( x , x_0 ):
     return np.heaviside ( x - x_0 , 1 )
     # return y
+
+def polyfit ( x , y , deg=10 ):
+    return np.polyfit ( x , y , deg )
 
 def Gaussian ( x , mean , std , scale ):
     return np.exp ( -.5 * ((x-mean) / std)**2  ) *scale
@@ -283,30 +285,23 @@ def captureLifetimeVSVelocity ( show=True ) :
 
 # TODO
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
-def cumulativeLunarImpactRate_Myr ( diameter_km=1 ):
+def cumulativeLunarImpactRate_Myr ( diameter_km=1 , impactor_speed_kps=1 , param=(0) ):
     # cumulative rate of impactors larger than 1km per 1 million years
     rateOnEarth_1km_1Myr = 1
     rateOnMoon_1km_1Myr  = rateOnEarth_1km_1Myr*(1737.4/6378)**2
 
-    # size distribution of objects function of diamter - read paper
 
-    # NOTE: 2/22
-    '''
-    this function is eqn 6: F(D) 
-     is this the same as line 261-262 n(D)dD=r(D)dD ?
-     and then is the same as eqn 7: R(D_min , D_max) = /int {D_min} {D_max} {r(D)dD} ?? 
+    # marchi_small_param , marchi_large_param , yue_param = digitize_plots ( )
 
-    ''' 
-
+    probability = np.polyval ( param , impactor_speed_kps ) / 45
     # NOTE 2/23
     # equation 10: N = c * d **(-p)
     # p = 2.5
-    return rateOnMoon_1km_1Myr * diameter_km ** -2.5
+    return probability * rateOnMoon_1km_1Myr * diameter_km ** -2.5
 
 
 
 
-# TODO
 # FUNCTION OF impactor diameter , ejecta diameter , ejecta speed
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 def nEjectaDensity ( impactor_diameter_km , ejecta_diameter_km , ejecta_speed=0 , show=False , p=2.5):
@@ -314,7 +309,7 @@ def nEjectaDensity ( impactor_diameter_km , ejecta_diameter_km , ejecta_speed=0 
     # ratio of crater diameter to depth = 10/1
     # assuming hemispherical bowl : volume of ejecta
     # volume of ejecta has same size distribution as impactors : size freq of ejecta
-    
+    global moon_escape_speed_kps
     R = .2
     x = 10
 
@@ -324,22 +319,6 @@ def nEjectaDensity ( impactor_diameter_km , ejecta_diameter_km , ejecta_speed=0 
     # volume of hemispherical bowl
     crater_volume_m   = np.pi/3 * (crater_diameter_m/2 - crater_depth_m) * crater_depth_m**2
 
-    # rho_ejecta_kg_m = 1700 
-    # rho_moon_kg_m     = 2550
-
-    # ejecta_mass_kg = crater_volume_m * rho_moon_kg_m
-
-    # ejecta_diameter_max = np.max(1000 * ejecta_diameter_km)
-
-    # ejecta_volume_m  = ejecta_mass_kg / rho_ejecta_kg_m
-    # cumulative number of ejecta w diameter > ejecta_diameter_km
-    # C = ejecta_mass_kg * (ejecta_diameter_max ** (-.5)) / (5/6 * np.pi * rho_moon_kg_m) 
-
-    # p = 2.5
-    # exponent = p**2 -3 *p + 1
-    # exponent = 1- 1/p
-    # C = (crater_volume_m * (3-p) / p) ** (-exponent)
-
     C = ( 2 * (3-p) * (R**2) * (x**3) * (3 - R) / p ) ** (p/3)
 
     C = C * (impactor_diameter_km * 1000) ** p
@@ -347,36 +326,128 @@ def nEjectaDensity ( impactor_diameter_km , ejecta_diameter_km , ejecta_speed=0 
     # N = C * p * (ejecta_diameter_km*1000) ** (-p-1)
     N = C * (ejecta_diameter_km*1000) ** (-p)
 
-    # N = N / (np.max(ejecta_speed) - np.min(ejecta_speed))
-    # N = N / (ejecta_speed_max - ejecta_speed_min)
-    
+    ejecta_speed_kps = velocity_kps_vs_impactorD_ejectaD ( ejecta_diameter_km / impactor_diameter_km )
+    if ejecta_speed_kps < moon_escape_speed_kps : N = 0
+
     return N
 
 
+# FUNCTION OF impactor diameter , ejecta diameter , ejecta speed
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------
+def nEjectaDensity_ ( impactor_diameter_km , ejecta_diameter_km , impactor_speed_kps , show=False , p=2.5):
+    # 1km impactor creates 10km crater
+    # ratio of crater diameter to depth = 10/1
+    # assuming hemispherical bowl : volume of ejecta
+    # volume of ejecta has same size distribution as impactors : size freq of ejecta
+    global moon_escape_speed_kps
+    R = .2
+    x = 10
 
-def integrand ( impactor_D_km , ejecta_speed_kps , param_1 , param_2 , ejecta_D_km ) : 
+    # ejecta diameter vs speed: assume random and uniform
+    # crater_diameter_m = x * impactor_diameter_km * 1000
+
+    impactor_speed_mps = impactor_speed_kps * 1000
+
+    moon_diameter_m = 3_474_200
+    moon_mass_kg    = 7.34767309e22
+
+    rho_impactor_kg_m = 1700
+    rho_moon_kg_m     = 2550 
+    impactor_KE       = np.pi * rho_impactor_kg_m * (impactor_speed_kps ** 2) * ((impactor_diameter_km*1000)**3)
+
+    g_impactor = 6.67e-11 * (rho_impactor_kg_m * 4/3 * np.pi * (1000*impactor_diameter_km/2)**3) * (1000*impactor_diameter_km/2)**-2
+    g_moon     = 6.67e-11 * (rho_moon_kg_m * 4/3 * np.pi * (moon_diameter_m/2)**3) * (moon_diameter_m/2)**-2
+
+    crater_diameter_m = (2.7e-2) *  (rho_impactor_kg_m ** (1/6)) * (rho_moon_kg_m**(-.5)) * (impactor_KE**.28) * ( 1 - .0095 * ( 1 - (2**.5)/2 )) * (( g_moon / g_impactor ) ** (3/16))
+
+    crater_depth_m    = R * crater_diameter_m 
+    # volume of hemispherical bowl
+    crater_volume_m   = np.pi/3 * (crater_diameter_m/2 - crater_depth_m) * crater_depth_m**2
+
+    C_prime = ( crater_volume_m * 6 * ( 3-p) / (p * np.pi) ) ** (p/3)
+
+    C = C_prime * (impactor_diameter_km * 1000) ** p
+
+    # N = C * p * (ejecta_diameter_km*1000) ** (-p-1)
+    N = C * (ejecta_diameter_km*1000) ** (-p)
+
+    ejecta_speed_kps = velocity_kps_vs_impactorD_ejectaD ( ejecta_diameter_km / impactor_diameter_km )
+    if ejecta_speed_kps < moon_escape_speed_kps : N = 0
+
+    return N
+
+# returns polynomial coefficients for marchi2009 and yue2013 figs 
+def digitize_plots ( poly_order = 15 , show=False ):
+    marchi2009_small = np.loadtxt ( '../data/digitized-figs/plot-marchi2009-small.csv' , skiprows=1 , delimiter=',' )
+    marchi2009_large = np.loadtxt ( '../data/digitized-figs/plot-marchi2009-small.csv' , skiprows=1 , delimiter=',' )
+    yue2013          = np.loadtxt ( '../data/digitized-figs/plot-yue2013.csv' , skiprows=1 , delimiter  =',' )
+
+    marchi_small_param = polyfit ( marchi2009_small[:,0] , marchi2009_small[:,1] , poly_order )
+    
+    marchi_large_param = polyfit ( marchi2009_large[:,0] , marchi2009_large[:,1] , poly_order )
+    
+    yue_param = polyfit ( yue2013[:,0] , yue2013[:,1] , poly_order )
+
+    
+    
+    if show: 
+        fig_marchi_sm , ax_marchi_sm = pyplot.subplots()
+        fig_marchi_lg , ax_marchi_lg = pyplot.subplots()
+    
+        ax_marchi_sm.scatter ( marchi2009_small[:,0] , marchi2009_small[:,1] , label='marchi2009 100 meter impactor' )
+        ax_marchi_lg.scatter ( marchi2009_large[:,0] , marchi2009_large[:,1] , label='marchi2009 72 km impactor' , color='red' )
+        ax_marchi_sm.set_xlabel('impactor speed [km/s]')
+        ax_marchi_sm.set_ylabel('probability')
+        ax_marchi_lg.set_xlabel('impactor speed [km/s]')
+        ax_marchi_lg.set_ylabel('probability')
+        print( 'marchi2009 small impactor params:', marchi_small_param)
+
+        print( 'marchi2009 large impactor params:', marchi_large_param)
+        ax_marchi_lg.plot ( marchi2009_large[:,0] , np.polyval  ( marchi_large_param , marchi2009_large[:,0]  ) , label='72km best fit' )
+        ax_marchi_sm.plot ( marchi2009_small[:,0] , np.polyval ( marchi_small_param , marchi2009_small[:,0] ,  ) , label='100m best fit' )
+        ax_marchi_lg.legend()
+        ax_marchi_sm.legend()
+
+        fig_yue , ax_yue = pyplot.subplots()
+        ax_yue.scatter ( yue2013[:,0] , yue2013[:,1] , label='Digitized data' )
+
+        ax_yue.plot ( yue2013[:,0] , np.polyval ( yue_param , yue2013[:,0] ) , label='best fit' )
+        ax_yue.set_xlabel('impactor speed [km/s]')
+        ax_yue.set_ylabel('encounters')
+        ax_yue.legend()
+        print('yue2013 params: ' , yue_param)
+
+    return marchi_small_param , marchi_large_param , yue_param
+
+def velocity_kps_vs_impactorD_ejectaD ( ratio_ejectaD_impactorD ) :
+    return 10 ** ( (2.34 - .54 * np.log10(ratio_ejectaD_impactorD) ) ) / 1000
+
+
+def integrand ( impactor_D_km , ejecta_speed_kps , impactor_speed_kps , param_1 , param_2 , param_3 , ejecta_D_km ) : 
 
     global ejecta_speed_max, ejecta_speed_min
 
     f = fraction_captured ( ejecta_speed_kps , *param_1)
     l = lifetime          ( ejecta_speed_kps , *param_2)
 
-    F = cumulativeLunarImpactRate_Myr ( impactor_D_km ) / (365 * 1e6)
+    F = cumulativeLunarImpactRate_Myr ( impactor_D_km, impactor_speed_kps , param_3 ) / (365 * 1e6 * 45 )
     N = nEjectaDensity (impactor_D_km , ejecta_D_km , ejecta_speed_kps) / (ejecta_speed_max - ejecta_speed_min)
 
     return f * l * F * N
 
 # integrate previous functions to calculate stead state population 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
-def minimoons( ejecta_diameter_km ):
+def minimoons( ejecta_diameter_km  ):
     global gMinDiameter_m
 
     unique_v0_kps , fraction_per_v0 , param_1 = fractionCapturedVSVelocity(show=False)
+    marchi_small_param , marchi_large_param , yue_param = digitize_plots (  )
+
 
     _, avg_lifetime_per_v0 , param_2 = captureLifetimeVSVelocity(show=False)
 
     # integral = dblquad ( integrand , 0 , np.inf , 0 , np.inf , args=(param_1 , param_2 , ejecta_diameter_km) )
-    integral = dblquad ( integrand , 0 , 10 , 0 , 10 , args=(param_1 , param_2 , ejecta_diameter_km) )
+    integral = tplquad ( integrand , 0 , 45 , 0 , 10 , 0 , 10 ,  args=(param_1 , param_2 , marchi_small_param , ejecta_diameter_km) )
 
     return integral
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
