@@ -307,7 +307,7 @@ def plot_weighted( npx, weights, xlabel="", ylabel='number', nbins=100, xrange=(
 #-----------------------------------------------------------------------------------
 # plots  npn vs npx as if the data is a histogram instead of histogramming the array
 # assumes that npx is the bin edges returned by np.hist
-def plotAsHistogram( npBinEdges, npValues, title='', xrange=(), xlabel="", xticks=(), yrange=(), ylabel='value', logx=False, logy=False, doShow=True,
+def plotAsHistogram( npBinEdges, npValues, title='', xrange=(), xlabel="", xticks=(), yrange=(), ylabel='value', logx=False, logy=False, doShow=False,
                     bShowErrorBars=False, bPoissonErrors=False, bUseYErrorVectors=False, yErrorNeg=[], yErrorPos=[],
                     plotFunc=True, xfunc=(), yfunc=(), figsize=(8,8), dpi=200 ):
     
@@ -340,7 +340,7 @@ def plotAsHistogram( npBinEdges, npValues, title='', xrange=(), xlabel="", xtick
     if( title != '' ):  pyplot.title( title )
     
     if ( doShow ):  pyplot.show()
-    else:           pyplot.close()
+    # else:           pyplot.close()
     
     
     

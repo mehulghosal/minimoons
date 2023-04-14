@@ -293,6 +293,7 @@ def cumulativeLunarImpactRate_Myr ( diameter_km=1 , impactor_speed_kps=1 , param
 
     # marchi_small_param , marchi_large_param , yue_param = digitize_plots ( )
 
+    # dividing by 45 makes it diferential in v... ? but still in D
     probability = np.polyval ( param , impactor_speed_kps ) / 45
     # NOTE 2/23
     # equation 10: N = c * d **(-p)
@@ -372,7 +373,11 @@ def nEjectaDensity_ ( impactor_diameter_km , ejecta_diameter_km , impactor_speed
     N = C * (ejecta_diameter_km*1000) ** (-p)
 
     ejecta_speed_kps = velocity_kps_vs_impactorD_ejectaD ( ejecta_diameter_km / impactor_diameter_km )
-    if ejecta_speed_kps < moon_escape_speed_kps : N = 0
+    # print(N.shape)
+    try: 
+        N[ejecta_speed_kps < moon_escape_speed_kps] = 0
+    except Exception as e: 
+        if ejecta_speed_kps < moon_escape_speed_kps: N = 0
 
     return N
 
@@ -387,9 +392,7 @@ def digitize_plots ( poly_order = 15 , show=False ):
     marchi_large_param = polyfit ( marchi2009_large[:,0] , marchi2009_large[:,1] , poly_order )
     
     yue_param = polyfit ( yue2013[:,0] , yue2013[:,1] , poly_order )
-
-    
-    
+        
     if show: 
         fig_marchi_sm , ax_marchi_sm = pyplot.subplots()
         fig_marchi_lg , ax_marchi_lg = pyplot.subplots()
@@ -422,7 +425,6 @@ def digitize_plots ( poly_order = 15 , show=False ):
 def velocity_kps_vs_impactorD_ejectaD ( ratio_ejectaD_impactorD ) :
     return 10 ** ( (2.34 - .54 * np.log10(ratio_ejectaD_impactorD) ) ) / 1000
 
-
 def integrand ( impactor_D_km , ejecta_speed_kps , impactor_speed_kps , param_1 , param_2 , param_3 , ejecta_D_km ) : 
 
     global ejecta_speed_max, ejecta_speed_min
@@ -430,14 +432,14 @@ def integrand ( impactor_D_km , ejecta_speed_kps , impactor_speed_kps , param_1 
     f = fraction_captured ( ejecta_speed_kps , *param_1)
     l = lifetime          ( ejecta_speed_kps , *param_2)
 
-    F = cumulativeLunarImpactRate_Myr ( impactor_D_km, impactor_speed_kps , param_3 ) / (365 * 1e6 * 45 )
-    N = nEjectaDensity (impactor_D_km , ejecta_D_km , ejecta_speed_kps) / (ejecta_speed_max - ejecta_speed_min)
+    F = cumulativeLunarImpactRate_Myr ( impactor_D_km, impactor_speed_kps , param_3 ) * (365 * 1e6 )
+    N = nEjectaDensity_ (impactor_D_km , ejecta_D_km , impactor_speed_kps) / (ejecta_speed_max - ejecta_speed_min) / 45 
 
     return f * l * F * N
 
 # integrate previous functions to calculate stead state population 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
-def minimoons( ejecta_diameter_km  ):
+def minimoons( ejecta_diameter_km ):
     global gMinDiameter_m
 
     unique_v0_kps , fraction_per_v0 , param_1 = fractionCapturedVSVelocity(show=False)
@@ -447,7 +449,7 @@ def minimoons( ejecta_diameter_km  ):
     _, avg_lifetime_per_v0 , param_2 = captureLifetimeVSVelocity(show=False)
 
     # integral = dblquad ( integrand , 0 , np.inf , 0 , np.inf , args=(param_1 , param_2 , ejecta_diameter_km) )
-    integral = tplquad ( integrand , 0 , 45 , 0 , 10 , 0 , 10 ,  args=(param_1 , param_2 , marchi_small_param , ejecta_diameter_km) )
+    integral = tplquad ( integrand , 0 , 10 , 0 , 10 , 0 , 45 ,  args=(param_1 , param_2 , marchi_small_param , ejecta_diameter_km) )
 
     return integral
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
