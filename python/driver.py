@@ -94,6 +94,8 @@ for ii in range( len( ejecta_diameter_km ) - 1):
 print(minimoons)
 
 
+output_file_name = '../data/outputs/minimoons.dat'
+np.savetxt ( output_file_name , np.hstack ( ejecta_diameter_km , minimoons) )
 
 # # plot.plot2d ( ejecta_diameter_km[:-1] , minimoons , xlabel='ejecta diameter [km]' , ylabel='n' , title=' n minimoons vs diameter_km' , logx=True , logy=True )
 hist.plotAsHistogram ( ejecta_diameter_km[:] , minimoons , xlabel='ejecta diameter [km]' , ylabel='n' , title='incremental n minimoons vs diameter_km' , logx=True , logy=True )
