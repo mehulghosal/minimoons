@@ -26,7 +26,7 @@ import glob
 # ephfile = os.path.join( os.getenv('OORB_DATA'), 'de430.dat' )
 # oo.pyoorb.oorb_init( ephfile )
 
-
+import scipy
 from scipy.constants import pi
 from scipy.optimize import curve_fit , newton
 from scipy.integrate import quad , dblquad , tplquad
@@ -38,7 +38,11 @@ moon_escape_speed_kps = 2.38
 
 dirSimulation = '../data/'
 
-   
+# exponential slope for size frequency diagram 
+global gp_ejecta , gp_impactor
+gp_ejecta = 3.5
+gp_impactor = 2.5   
+
 # ejecta initial conditions
 global giPar, gLon_rad, gLat_rad, gv0_kps, gAzimuth_rad, gImpactTime_jd, gxv0_ssb_ec, gOrbit0_hel, gOrbit0_geo
 global gnParticlesPerCrater
@@ -87,6 +91,9 @@ def Gaussian ( x , mean , std , scale ):
 def lifetime ( x , mean , std , scale ) : 
     global moon_escape_speed_kps
     return Gaussian ( x , mean , std , scale ) * heavyside ( x , moon_escape_speed_kps )
+
+def line ( x , m , b ) : 
+    return m * x + b
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 def createSummaryTable( nCraters=60 ):
@@ -138,6 +145,30 @@ def createSummaryTable( nCraters=60 ):
                 gSummaryTable[particleID][ 'begin_day' ] = gtBegin_day[captured]
                 gSummaryTable[particleID][ 'end_day'   ] = gtEnd_day[captured]
 
+
+
+#------------------------------------------------------------------------------------
+# used Marc Paterno's efficiency calculator to determine the efficiency with min/max
+# values within the confidence interval specified by CI
+# i.e. pass in a vector of k successes in n trials with the CI
+# returns a vector of efficiencies and min/max efficiencies for the interval
+# The appropriate reference for the supporting document is for a
+# Fermilab technical memo: FERMILAB-TM-2286-CD.
+
+# returns efficiency, efficiency_min, efficiency_max
+
+def efficiency( k, n, CI=0.68 ):
+   
+    # write a file containing the k, n vectors
+    np.savetxt( 'junk.dat', np.column_stack([k,n]), fmt='%d %d' )    
+    import subprocess
+    # call Paterno's function
+    subprocess.check_output( '/home/mehul/code/calceff2/calceff2 junk.dat ' + str( CI ) + '> junk.results', shell=True )
+
+    # format and return the output,  returns efficiency, efficiency_min, efficiency_max
+    return np.loadtxt( 'junk.results', unpack=True )
+
+
 # TODO: prompt captures vs delayed captures
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 def fractionCapturedVSVelocity ( show=False ):
@@ -174,8 +205,9 @@ def fractionCapturedVSVelocity ( show=False ):
         # delayed_per_v0  = len( np.where(v_0_matches[captured]['begin_day']  > 1)[0] )
 
     fraction_per_v0 = captured_per_v0 / total_per_v0
+    efficiency_per_V , eff_min , eff_max = efficiency ( captured_per_v0 , total_per_v0 ,  )
     # prompt_over_delayed = prompt_per_v0 / delayed_per_v0
-    param , param_cov = curve_fit ( fraction_captured_model , unique_v0_kps, fraction_per_v0 , p0=[1046 , -8] )
+    param , param_cov = curve_fit ( fraction_captured_model , unique_v0_kps, efficiency_per_V , p0=[1046 , -8] )
 
     p_param , p_param_cov = curve_fit ( fraction_captured_model , unique_v0_kps, prompt_per_v0/total_per_v0 , p0=[1046 , -8] )
 
@@ -208,19 +240,24 @@ def fractionCapturedVSVelocity ( show=False ):
         ax.set_yscale('log')
 
 
-        plot.plot2d ( unique_v0_kps-moon_escape_speed_kps , prompt_per_v0/total_per_v0  ,  markersize=5 , xrange=(1e-2,2) , yrange=(1e-2,1.01) , title='prompt Fraction captured vs ejection speed' , xlabel='Ejection speed - lunar escape [km/s]' , ylabel='prompt Fraction captured' )
-        plot.plot2d ( unique_v0_kps-moon_escape_speed_kps , delayed_per_v0/total_per_v0 ,  markersize=5  , xrange=(1e-2,2) , yrange=(1e-2,1.01) , title='delayed Fraction captured vs ejection speed' , xlabel='Ejection speed- lunar escape [km/s]' , ylabel='delayed Fraction captured' )
+        # plot.plot2d ( unique_v0_kps-moon_escape_speed_kps , prompt_per_v0/total_per_v0  ,  markersize=5 , xrange=(1e-2,2) , yrange=(1e-2,1.01) , title='prompt Fraction captured vs ejection speed' , xlabel='Ejection speed - lunar escape [km/s]' , ylabel='prompt Fraction captured' )
+        # plot.plot2d ( unique_v0_kps-moon_escape_speed_kps , delayed_per_v0/total_per_v0 ,  markersize=5  , xrange=(1e-2,2) , yrange=(1e-2,1.01) , title='delayed Fraction captured vs ejection speed' , xlabel='Ejection speed- lunar escape [km/s]' , ylabel='delayed Fraction captured' )
         
-        ax.scatter ( unique_v0_kps-moon_escape_speed_kps , prompt_per_v0/total_per_v0  , label='prompt Fraction captured '  , color='green' )
-        ax.scatter ( unique_v0_kps-moon_escape_speed_kps , delayed_per_v0/total_per_v0 , label='delayed Fraction captured ' ,color='blue')
+        # ax.scatter ( unique_v0_kps-moon_escape_speed_kps , prompt_per_v0/total_per_v0  , label='prompt Fraction captured '  , color='green' )
+        # ax.scatter ( unique_v0_kps-moon_escape_speed_kps , delayed_per_v0/total_per_v0 , label='delayed Fraction captured ' ,color='blue')
 
 
-        ax.plot ( np.arange(0,5,.001) - moon_escape_speed_kps, fraction_captured_model(np.arange(0,5,.001) , *p_param) , color='green')
-        ax.plot ( np.arange(0,5,.001) - moon_escape_speed_kps, fraction_captured_model(np.arange(0,5,.001) , *d_param) , color='blue')
+        # ax.plot ( np.arange(0,5,.001) - moon_escape_speed_kps, fraction_captured_model(np.arange(0,5,.001) , *p_param) , color='green')
+        # ax.plot ( np.arange(0,5,.001) - moon_escape_speed_kps, fraction_captured_model(np.arange(0,5,.001) , *d_param) , color='blue')
         
-        ax.scatter ( unique_v0_kps-moon_escape_speed_kps , fraction_per_v0 ,label='total fraction captured' , color='red')
+        # ax.scatter ( unique_v0_kps-moon_escape_speed_kps , fraction_per_v0 ,label='total fraction captured' , color='red')
+        err = np.vstack(( efficiency_per_V - eff_min , eff_max-efficiency_per_V))
+        # print(err.shape)
+        # print(err)
+        ax.errorbar ( unique_v0_kps-moon_escape_speed_kps , fraction_per_v0 , yerr=err , label='total fraction captured' , color='red' , marker='.' , linestyle='')
 
         ax.legend()
+    
 
     return unique_v0_kps , fraction_per_v0 , param
 
@@ -242,6 +279,7 @@ def captureLifetimeVSVelocity ( show=True ) :
 
     for ii in range(len(unique_v0_kps)):
         v_0 = unique_v0_kps[ii]
+
         v_0_matches = gSummaryTable[np.where(gSummaryTable['v0_kps']==v_0)]
 
         captured  = np.where( v_0_matches['captured'] == 1 )
@@ -252,20 +290,27 @@ def captureLifetimeVSVelocity ( show=True ) :
 
         for jj in range(len(captured[0])):
             prompt  = np.where(begin_day [jj] < 10)
-            delayed = np.where(begin_day [jj] > 10)
+            delayed = np.where(begin_day [jj] >= 10)
 
             lifetime_per_v0[ii] += np.sum ( end_day[jj] - begin_day[jj] )
 
             prompt_lifetime  [ii] += np.sum ( end_day[jj][prompt ] - begin_day[jj][prompt ] ) 
             delayed_lifetime [ii] += np.sum ( end_day[jj][delayed] - begin_day[jj][delayed] ) 
 
-            prompt_per_v0 [ii]  += len(prompt[0])
+            prompt_per_v0 [ii]  += len(prompt [0])
             delayed_per_v0 [ii] += len(delayed[0])
 
 
     avg_capture_lifetime = lifetime_per_v0 / captured_per_v0 
-    param , param_cov = curve_fit ( lifetime , unique_v0_kps[np.where(lifetime_per_v0>0)] , avg_capture_lifetime[np.where(lifetime_per_v0>0)] )
-
+    avg_prompt_lifetime  = prompt_lifetime / prompt_per_v0
+    # param , param_cov = curve_fit ( lifetime , unique_v0_kps[np.where(lifetime_per_v0>0)] , avg_capture_lifetime[np.where(lifetime_per_v0>0)] )
+    # param , param_cov = curve_fpit ( line , unique_v0_kps[np.where(lifetime_per_v0>0)] , avg_capture_lifetime[np.where(lifetime_per_v0>0)]  , )
+    param = polyfit (unique_v0_kps[np.where(lifetime_per_v0>0)] , avg_capture_lifetime[np.where(lifetime_per_v0>0)] , deg=1 )
+    # print(unique_v0_kps[np.where(prompt_lifetime>0)] , avg_prompt_lifetime[np.where(prompt_lifetime>0)])
+    # p_param , p_param_cov = curve_fit ( polyfit , unique_v0_kps[np.where(prompt_lifetime>0)] , avg_prompt_lifetime[np.where(prompt_lifetime>0)]  , )
+    # param , param_cov = curve_fit ( line , unique_v0_kps , avg_capture_lifetime )
+    print ( 'total lifetime fitted params: ' , *param)
+    # print ( 'prompt lifetime fitted params: ' , *p_param)
 
     if show: 
         print('unique initial velocities [km/s]: ' , unique_v0_kps)
@@ -283,29 +328,34 @@ def captureLifetimeVSVelocity ( show=True ) :
 
         # plot.plot2d ( unique_v0_kps , lifetime_per_v0 / captured_per_v0 , markersize=5 , logx=True , logy=True , xrange=(2,5) , yrange=(.1, 10000), title='Average Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Average Capture lifetime [days]' )
     
+        # print(err)
     
 
         fig , ax = pyplot.subplots( )
 
-        ax.scatter ( unique_v0_kps , avg_capture_lifetime )
-        ax.set_xlabel('Ejection speed [km/s]' )
-        ax.set_ylabel('Average Capture lifetime [days]')
-        ax.set_title('Average Capture lifetime vs ejection speed')
-        ax.set_xlim (1 , 25)
-        ax.set_ylim (1e-1 , 10e4)
+        ax.scatter ( unique_v0_kps -2.38, avg_capture_lifetime/365 , label='total' )
+        ax.set_xlabel('Ejection speed - lunar escape speed [km/s]' )
+        ax.set_ylabel(' Capture lifetime [years]')
+        ax.set_title(' Capture lifetime vs ejection speed')
+        ax.set_xlim (8e-3 , 10)
+        ax.set_ylim (0 , 30)
     
 
-        ax.plot ( np.arange(0,10,.001) , lifetime(np.arange(0,10,.001) , *param) )
+        # ax.plot ( np.arange(0,10,.001)-2.38 , lifetime(np.arange(0,10,.001) , *param)/365 )
 
+        # ax.plot ( unique_v0_kps -2.38 , line( unique_v0_kps, *param )/365 , label='total fit (linear)' )
+        # ax.plot ( unique_v0_kps -2.38 , polyfit( unique_v0_kps, *p_param )/365 , label='total fit (linear)' )
+        
+        # ax.plot  ( unique_v0_kps -2.38 , np.polyval ( param , unique_v0_kps )/ 365)
         ax.set_xscale('log')
-        ax.set_yscale('log')
+        # ax.set_yscale('log')
 
 
 
 
-        plot.plot2d ( unique_v0_kps , prompt_lifetime / prompt_per_v0   , markersize=5 , logx=True , logy=True , xrange=(2,5) , title='Average prompt Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Average prompt Capture lifetime [days]' )
-        plot.plot2d ( unique_v0_kps , delayed_lifetime / delayed_per_v0  , bShow=False , markersize=5 , logx=True , logy=True , xrange=(2,5) , title='Average delayed Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Average delayed Capture lifetime [days]' )
-
+        ax.scatter ( unique_v0_kps -2.38,  avg_prompt_lifetime /365 , label='prompt' )
+        # plot.plot2d ( unique_v0_kps , delayed_lifetime / delayed_per_v0  , bShow=False , markersize=5 , logx=True , logy=True , xrange=(2,5) , title='Average delayed Capture lifetime vs ejection speed' , xlabel='Ejection speed [km/s]' , ylabel='Average delayed Capture lifetime [days]' )
+        ax.legend()
         print()
 
 
@@ -319,7 +369,7 @@ def interpolate_polynomials ( small_impactor_param , large_impactor_param , impa
     return interp
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
-def cumulativeLunarImpactRate_Myr (   impactor_speed_kps=1 , diameter_km=1 , param=0 , p=2.5 , A=1737.4/6378 ):
+def cumulativeLunarImpactRate_Myr (   impactor_speed_kps=1 , diameter_km=1 , param=0 , p=gp_impactor , A=1737.4/6378 ):
     # cumulative rate of impactors larger than 1km per 1 million years
     rateOnEarth_1km_1Myr = 1
     rateOnMoon_1km_1Myr  = rateOnEarth_1km_1Myr*(A)**2
@@ -356,12 +406,12 @@ def diffLunarImpactRate_Myr (   impactor_speed_kps=1 , diameter_km=1 , param=0 ,
     # p = 2.5
     return p*probability * rateOnMoon_1km_1Myr * diameter_km ** (-p-1)
 
-def return_diffIntegrated_impactRate ( impactor_diameter_km , param=(0) , p=2.5 , A=1737.4/6378 ):
+def return_diffIntegrated_impactRate ( impactor_diameter_km , param=(0) , p=gp_impactor , A=1737.4/6378 ):
     I = quad ( diffLunarImpactRate_Myr , 0 , 50 , args=(impactor_diameter_km , param , p , A) )
     return I[0]
 
 
-def nEjectaDensity_ ( impactor_diameter_km , ejecta_diameter_km , impactor_speed_kps , show=False , p=2.5):
+def nEjectaDensity_ ( impactor_diameter_km , ejecta_diameter_km , impactor_speed_kps , show=False , p=gp_ejecta):
     # 1km impactor creates 10km crater
     # ratio of crater diameter to depth = 10/1
     # assuming hemispherical bowl : volume of ejecta
@@ -376,48 +426,39 @@ def nEjectaDensity_ ( impactor_diameter_km , ejecta_diameter_km , impactor_speed
 
     impactor_speed_mps = impactor_speed_kps * 1000
 
-    moon_diameter_m = 3_474_200
-    moon_mass_kg    = 7.34767309e22
+    
+    # crater_diameter_m = (2.7e-2) *  (rho_impactor_kg_m ** (1/6)) * (rho_moon_kg_m**(-.5)) * (impactor_KE**.28) * ( 1 - .0095 * ( 1 - sin45 )) * (( g_moon / g_impactor ) ** (3/16))
+    crater_diameter_m = craterDiameter_km (impactor_diameter_km  , impactor_speed_kps , p = p) * 1000
+    crater_volume_m = R * np.pi/6 * ( .75 + R**2 ) * (crater_diameter_m**3)
 
-    rho_impactor_kg_m = 1700
-    rho_moon_kg_m     = 2550 
-    impactor_KE       = 1/12 * np.pi * rho_impactor_kg_m * (impactor_speed_mps ** 2) * ((impactor_diameter_km*1000)**3)
-    # impactor_KE       = 1/12* np.pi * rho_impactor_kg_m * (impactor_speed_mps ** 2) * ((impactor_diameter_km*1000)**3)
-
-    impactor_radius_m = 1000*impactor_diameter_km/2
-
-    g_impactor = 6.67e-11 * (rho_impactor_kg_m * 4/3 * np.pi * impactor_radius_m**3) * impactor_radius_m**-2
-    g_moon     = 6.67e-11 * (rho_moon_kg_m * 4/3 * np.pi * (moon_diameter_m/2)**3) * (moon_diameter_m/2)**-2
-
-    sin45 = (2**.5)/2
-    crater_diameter_m = (2.7e-2) *  (rho_impactor_kg_m ** (1/6)) * (rho_moon_kg_m**(-.5)) * (impactor_KE**.28) * ( 1 - .0095 * ( 1 - sin45 )) * (( g_moon / g_impactor ) ** (3/16))
-
-    crater_depth_m    = R * crater_diameter_m 
     # volume of hemispherical bowl
     # crater_volume_m   = np.pi/3 * (crater_diameter_m/2 - crater_depth_m) * crater_depth_m**2
 
-    crater_volume_m = R * np.pi/6 * ( .75 + R**2 ) * (crater_diameter_m**3)
+    # crater_volume_m = np.pi * 3 * R / 24 * (crater_diameter_m**3)
 
     x = (3-p)/p * R * (.75 + R**2)
+    x = np.abs ( x )
 
     LHS = lambda c : c * np.abs(c ** (3/p - 1) - ejecta_d_min_m ** (3-p) ) 
     RHS = x * crater_diameter_m**3
 
     lambda_C = lambda c : LHS(c) - RHS
 
-
-    r = np.linspace(5000 , RHS , 500)
-
-
     C_first_guess = RHS ** (1/1.2)
+    ejecta_d_max_m = .1 * impactor_diameter_km * 1000
+    # C_first_guess = ejecta_d_max_m ** p
     
     # C = r[np.where ( lambda_C(r) < .1 )][0]
     # C = r[np.where ( np.abs(lambda_LHS(r) - RHS) < 1000 )][0]
-    C = newton ( lambda_C , C_first_guess ) 
-    print(f'C={C}   impactorD_km={impactor_diameter_km}   impactorV_kps={impactor_speed_kps}')
+    C , result = newton ( lambda_C , C_first_guess , full_output=True ) 
+    print ( result.converged )
+    print(f'initial guess C={C_first_guess}  C={C}   impactorD_km={impactor_diameter_km}   impactorV_kps={impactor_speed_kps}')
     
     ejecta_d_max_m = C ** (1/p)
-    ejecta_volume_m = np.pi * C * p / (6 * (3-p)) * np.abs ( ejecta_d_max_m**(3-p) - ejecta_d_min_m**(3-p) )
+    ejecta_volume_m = np.pi/6 * C * p /  (3-p) * np.abs ( ejecta_d_max_m**(3-p) - ejecta_d_min_m**(3-p) )
+    ejecta_volume_m = np.abs (ejecta_volume_m)
+
+    crater_volume_m = R * np.pi/6 * ( .75 + R**2 ) * (crater_diameter_m**3)
     print ( f'crater_volume={crater_volume_m}  ejecta_volume={ejecta_volume_m}    crater-ejecta_V={np.abs(crater_volume_m-ejecta_volume_m)}  ' )
     print()
     # N = C * p * (ejecta_diameter_km*1000) ** (-p-1)
@@ -439,7 +480,7 @@ def returnIntegrated_n () : pass
 
 # FUNCTION OF impactor diameter , ejecta diameter , ejecta speed
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
-def craterDiameter_km ( impactor_diameter_km , ejecta_diameter_km , impactor_speed_kps , show=False , p=2.5):
+def craterDiameter_km ( impactor_diameter_km  , impactor_speed_kps , show=False , p=gp_ejecta):
     # 1km impactor creates 10km crater
     # ratio of crater diameter to depth = 10/1
     # assuming hemispherical bowl : volume of ejecta
@@ -447,26 +488,34 @@ def craterDiameter_km ( impactor_diameter_km , ejecta_diameter_km , impactor_spe
     global moon_escape_speed_kps
     R = .2
 
-
-    # ejecta diameter vs speed: assume random and uniform
-    # crater_diameter_m = x * impactor_diameter_km * 1000
-
-    # impactor_speed_kps = np.array([5 , 10 , 20 , 30 , 40])
-    # impactor_speed_mps = impactor_speed_kps * 1000
-
     moon_diameter_m = 3_474_200
     moon_mass_kg    = 7.34767309e22
 
-    rho_impactor_kg_m = 1700
-    rho_moon_kg_m     = 2550 
-    # impactor_KE       = np.pi * rho_impactor_kg_m * (impactor_speed_kps ** 2) * ((impactor_diameter_km*1000)**3)
-    impactor_KE       = 1/12* np.pi * rho_impactor_kg_m * ((impactor_speed_kps*1000) ** 2) * ((impactor_diameter_km*1000)**3)
+    rho_impactor_S_kg_m3 = 2700
+    rho_impactor_C_kg_m3 = 700
+
+    fraction_impactor_S = .75
+    fraction_impactor_c = .25
+
+    rho_impactor_kg_m3 = fraction_impactor_S * rho_impactor_S_kg_m3 + fraction_impactor_c * rho_impactor_C_kg_m3 
+    rho_moon_kg_m3    = 2550 
+    # impactor_KE       = np.pi * rho_impactor_kg_m * ((impactor_speed_kps*1000) ** 2) * ((impactor_diameter_km*1000)**3)
+    impactor_KE       = 4/3 * 1/2 * np.pi * rho_impactor_kg_m3 * ((impactor_speed_kps*1000) ** 2) * ((impactor_diameter_km*1000/2)**3)
+    # impactor_KE       = 1/12* np.pi * rho_impactor_kg_m * ((impactor_speed_kps*1000) ** 2) * ((impactor_diameter_km*1000)**3)
+
+    G = scipy.constants.G
+    g_impactor = G*(rho_impactor_kg_m3 * 4/3 * np.pi * (1000*impactor_diameter_km/2)**3) * (1000*impactor_diameter_km/2)**-2
+    # g_moon     = G*(rho_moon_kg_m3     * 4/3 * np.pi * (     moon_diameter_m     /2)**3) * (     moon_diameter_m     /2)**-2
+    g_moon     = G*(moon_mass_kg) * (     moon_diameter_m     /2)**-2
 
 
-    g_impactor = 6.67e-11 * (rho_impactor_kg_m * 4/3 * np.pi * (1000*impactor_diameter_km/2)**3) * (1000*impactor_diameter_km/2)**-2
-    g_moon     = 6.67e-11 * (rho_moon_kg_m * 4/3 * np.pi * (moon_diameter_m/2)**3) * (moon_diameter_m/2)**-2
+    # print(f'g_impactor={g_impactor}   g_moon={g_moon}')
 
-    crater_diameter_m = (2.7e-2) *  (rho_impactor_kg_m ** (1/6)) * (rho_moon_kg_m**(-.5)) * (impactor_KE**.28) * ( 1 - .0095 * ( 1 - (2**.5)/2 )) * (( g_moon / g_impactor ) ** (3/16))
+    crater_diameter_m = (2.7e-2) *  (rho_impactor_kg_m3 ** (1/6)) * (rho_moon_kg_m3**(-.5)) * (impactor_KE**.28) * ( 1 - .095 * ( 1 - (2**.5)/2 )) * (( g_moon / g_impactor ) ** (3/16))
+
+    # print ( 'impactor mass kg: ' , 4/3 * np.pi * rho_impactor_kg_m3 * ((impactor_diameter_km*1000/2)**3))
+    # print ( 'impactor KE in Joules: ' , impactor_KE )
+    # print ( 'G_moon / G_impactor :', g_moon/g_impactor)
 
     return crater_diameter_m / 1000
 
